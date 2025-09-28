@@ -1,0 +1,583 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creating orapoc DEV Environment
+
+Parameters:
+  VPCCidrBlock:
+    Type: String
+    Default: 10.0.0.0/24
+    Description: CIDR block for the VPC
+  
+  DBInstanceIdentifier:
+    Type: String
+    Description: Identifier for the RDS DB instance
+    Default: orapocdevdb
+  
+  UIHostHeader:
+    Type: String
+    Default: pocdevui.yourdemon.com
+
+  APIHostHeader:
+    Type: String
+    Default: pocdevbackend.yourdemon.com
+  
+
+  MasterUsername:
+    Type: String
+    Description: Master username for the RDS DB instance
+    Default: orapocdbadmin
+
+  MasterUserPassword:
+    Type: String
+    NoEcho: true
+    Description: Master password for the RDS DB instance. At least 8 printable ASCII characters. Can't contain any of the following characters (slash), (single quote),  (double quote), and @ (at sign)
+    
+  Engine:
+    Type: String
+    Default: oracle-se2
+    Description: The database engine for the RDS instance
+
+  EngineVersion:
+    Type: String
+    Default: '19.0.0.0.ru-2021-01.rur-2021-01.r1'
+    Description: The version of the database engine
+
+  DBInstanceClass:
+    Type: String
+    Default: db.m5.large
+    AllowedValues:
+      - db.m5.large
+      - db.m5.xlarge
+      - db.m5.2xlarge
+      - db.m5.4xlarge
+    Description: The instance class for the RDS instance
+
+  AllocatedStorage:
+    Type: Number
+    Default: 100
+    Description: The allocated storage size for the RDS instance should be more than 100 GB
+
+
+  publicsubnet1cidr:
+    Type: String
+    Default: 10.0.0.192/26
+    Description: CIDR block for Subnet 1
+
+  piblicSubnet2CidrBlock:
+    Type: String
+    Default: 10.0.0.128/26
+    Description: CIDR block for Subnet 2
+
+  privateSubnet3CidrBlock:
+    Type: String
+    Default: 10.0.0.64/26
+    Description: CIDR block for Subnet 3
+
+  privateSubnet4CidrBlock:
+    Type: String
+    Default: 10.0.0.0/26
+    Description: CIDR block for Subnet 4
+
+  BackendContainerImage:
+    Type: String
+    Description: Container Image for TaskDefinition 1 for Backend
+
+  UIContainerImage:
+    Type: String
+    Description: Container Image for TaskDefinition 2 for UI
+
+  BackendContainerName:
+    Type: String
+    Description: Name of Container 1 for backend
+
+  UIContainerName:
+    Type: String
+    Description: Name of Container 2 for UI
+
+  CPUForBackend:
+    Type: String
+    Default: 256
+    Description: CPU for TaskDefinition 1 for backend
+
+  CPUForUI:
+    Type: String
+    Default: 256
+    Description: CPU for TaskDefinition 2 for UI
+
+  MemoryForBackend:
+    Type: String
+    Default: 512
+    Description: Memory for TaskDefinition 1 for backend
+
+  MemoryForUI:
+    Type: String
+    Default: 512
+    Description: Memory for TaskDefinition 2 for UI
+
+  ACMCertificateArn:
+    Type: String
+    Description: ACM certificate ARN for HTTPS
+    Default: "arn:aws:acm:us-west-2:562612301288:certificate/0c476c3b-10aa-44fd-a6cb-7095cdb8a35d"
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCidrBlock
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: custom-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: custom-VPC-igw
+    DeletionPolicy: Retain
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+    DeletionPolicy: Retain
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref publicsubnet1cidr
+      AvailabilityZone: "us-west-2a"
+      Tags:
+        - Key: Name
+          Value: custom-VPC-public-subnet-1
+    DeletionPolicy: Retain
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref piblicSubnet2CidrBlock
+      AvailabilityZone: "us-west-2b"
+      Tags:
+        - Key: Name
+          Value: custom-VPC-public-subnet-2
+    DeletionPolicy: Retain
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref privateSubnet3CidrBlock
+      AvailabilityZone: "us-west-2a"
+      Tags:
+        - Key: Name
+          Value: custom-VPC-private-subnet-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref privateSubnet4CidrBlock
+      AvailabilityZone: "us-west-2b"
+      Tags:
+        - Key: Name
+          Value: custom-VPC-private-subnet-2
+    
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: custom-VPC-public-route-table
+    DeletionPolicy: Retain
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: custom-VPC-private-route-table
+    DeletionPolicy: Retain
+
+  PublicRoute1:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+    DeletionPolicy: Retain
+
+  PublicRoute2:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: !Ref publicsubnet1cidr
+      NatGatewayId: !Ref NatGateway
+    DeletionPolicy: Retain
+
+  PrivateRoute1:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+    DeletionPolicy: Retain
+
+  PublicSubnet1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+    DeletionPolicy: Retain
+
+  PublicSubnet2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+    DeletionPolicy: Retain
+
+  PrivateSubnet1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+    DeletionPolicy: Retain
+
+  PrivateSubnet2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+    DeletionPolicy: Retain
+
+  NatGatewayEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: VPC
+    DeletionPolicy: Retain
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewayEIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+    DeletionPolicy: Retain
+ 
+  ParameterStoreVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: "com.amazonaws.us-west-2.ssm"
+      VpcEndpointType: "Interface"
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  ECRVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: "com.amazonaws.us-west-2.ecr.dkr"
+      VpcEndpointType: "Interface"
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  S3VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: "com.amazonaws.us-west-2.s3"
+      VpcEndpointType: "Gateway"
+
+  CloudWatchVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: "com.amazonaws.us-west-2.logs"
+      VpcEndpointType: "Interface"
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  orapocECSCluster:
+    Type: 'AWS::ECS::Cluster'
+
+  orapocExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: orapocExecutionRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+        - 'arn:aws:iam::aws:policy/CloudWatchLogsFullAccess'
+
+  orapocTaskDefinitionUI:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: orapocUI-task-definition
+      NetworkMode: awsvpc
+      Cpu: !Ref CPUForUI
+      Memory: !Ref MemoryForUI
+      ExecutionRoleArn: !GetAtt orapocExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Ref UIContainerName
+          Image: !Ref UIContainerImage
+          PortMappings:
+            - ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref orapocUILogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: orapocUI
+
+  orapocUILogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub "/ecs/${AWS::StackName}/orapocUI"
+      RetentionInDays: 7
+
+  orapocTaskDefinitionAPI:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: orapocAPI-task-definition
+      NetworkMode: awsvpc
+      Cpu: !Ref CPUForBackend
+      Memory: !Ref MemoryForBackend
+      ExecutionRoleArn: !GetAtt orapocExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Ref BackendContainerName
+          Image: !Ref BackendContainerImage
+          PortMappings:
+            - ContainerPort: 80
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref orapocAPILogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: orapocAPI
+
+  orapocAPILogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub "/ecs/${AWS::StackName}/orapocAPI"
+      RetentionInDays: 7
+
+  orapocALBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security group for ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  orapocFargateSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security group for Fargate tasks
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref orapocALBSecurityGroup
+
+  orapocALBTargetGroupUI:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: orapoc-target-group-ui
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VPC
+
+  orapocALBTargetGroupAPI:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: orapoc-target-group-api
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VPC
+
+  orapocALBListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            StatusCode: 200
+            ContentType: text/plain
+            MessageBody: "Default response"
+      LoadBalancerArn: !Ref orapocApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref ACMCertificateArn
+
+  orapocApplicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: orapoc-application-load-balancer
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref orapocALBSecurityGroup
+      Type: application
+
+  orapocServiceUI:
+    Type: 'AWS::ECS::Service'
+    DependsOn: orapocALBListener
+    Properties:
+      Cluster: !Ref orapocECSCluster
+      LaunchType: FARGATE
+      ServiceName: orapocUIservice
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref orapocFargateSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet1
+      TaskDefinition: !Ref orapocTaskDefinitionUI
+      LoadBalancers:
+        - ContainerName: !Ref UIContainerName
+          ContainerPort: 80
+          TargetGroupArn: !Ref orapocALBTargetGroupUI
+
+  orapocServiceAPI:
+    Type: 'AWS::ECS::Service'
+    DependsOn: orapocALBListener
+    Properties:
+      Cluster: !Ref orapocECSCluster
+      LaunchType: FARGATE
+      ServiceName: orapocAPIservice
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref orapocFargateSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet2
+      TaskDefinition: !Ref orapocTaskDefinitionAPI
+      LoadBalancers:
+        - ContainerName: !Ref BackendContainerName
+          ContainerPort: 80
+          TargetGroupArn: !Ref orapocALBTargetGroupAPI
+          
+  orapocALBListenerRuleUI:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref orapocALBTargetGroupUI
+      Conditions:
+        - Field: host-header
+          Values:
+            - !Ref UIHostHeader
+      ListenerArn: !Ref orapocALBListener
+      Priority: 1
+
+  orapocALBListenerRuleAPI:
+    Type: 'AWS::ElasticLoadBalancingV2::ListenerRule'
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref orapocALBTargetGroupAPI
+      Conditions:
+        - Field: host-header
+          Values:
+            - !Ref APIHostHeader
+      ListenerArn: !Ref orapocALBListener
+      Priority: 2
+   
+  orapocDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Security Group for the Oracle RDS database."
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          SourceSecurityGroupId: !Ref orapocFargateSecurityGroup
+      Tags:
+        - Key: Name
+          Value: orapocRDSSecurityGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    
+  orapocDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "DB Subnet Group for Oracle RDS"
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+    DeletionPolicy: Retain
+
+  orapocDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Ref DBInstanceIdentifier
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: !Ref Engine
+      EngineVersion: !Ref EngineVersion
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      AllocatedStorage: !Ref AllocatedStorage
+      MultiAZ: false
+      LicenseModel: "license-included"  # Specify the license model as "license-included"
+      DBSubnetGroupName: !Ref orapocDBSubnetGroup
+      VPCSecurityGroups: [!GetAtt orapocDBSecurityGroup.GroupId]
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+Outputs:
+  RDSInstanceEndpoint:
+    Description: "Endpoint URL of the created RDS instance."
+    Value: !GetAtt orapocDBInstance.Endpoint.Address
+
+  DBSubnetGroup:
+    Description: "Name of the created DB Subnet Group."
+    Value: !Ref orapocDBSubnetGroup
+
+  DBSecurityGroupId:
+    Description: "ID of the created Security Group for the RDS database."
+    Value: !Ref orapocDBSecurityGroup
+
+  DBInstanceIdentifier:
+    Description: "Identifier of the created RDS instance."
+    Value: !Ref orapocDBInstance
+  
+  ALBDNSName:
+    Description: DNS name of the Application Load Balancer (ALB)
+    Value: !GetAtt orapocApplicationLoadBalancer.DNSName
+    Export:
+      Name: ALBDNSName
+
+
+
