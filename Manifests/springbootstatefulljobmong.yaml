@@ -1,0 +1,163 @@
+# 1. MongoDB Headless Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodsvc
+  namespace: webapps
+spec:
+  clusterIP: None
+  selector:
+    app: mongod
+  ports:
+    - port: 27017
+      targetPort: 27017
+
+---
+# 2. MongoDB ReplicaSet StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongod
+  namespace: webapps 
+spec:
+  selector:
+    matchLabels:
+      app: mongod
+  serviceName: mongodsvc
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: mongod
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: mongodbcontainer
+          image: mongo
+          command: ["mongod", "--bind_ip", "0.0.0.0", "--replSet", "MainRepSet"]
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongopvc
+              mountPath: "/data/db"
+  volumeClaimTemplates:
+    - metadata:
+        name: mongopvc
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 1Gi
+
+---
+# 3. MongoDB Replica Set Init Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mongors-init
+  namespace: webapps
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mongo-init
+          image: mongo
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Waiting for MongoDB pods to be ready..."
+              until mongosh --host mongod-0.mongodsvc.webapps.svc.cluster.local:27017 --eval "db.adminCommand('ping')" > /dev/null 2>&1; do
+                echo "Waiting for primary..."
+                sleep 5
+              done
+
+              echo "Initiating Replica Set..."
+              mongosh --host mongod-0.mongodsvc.webapps.svc.cluster.local:27017 --eval '
+                rs.initiate({
+                  _id: "MainRepSet",
+                  members: [
+                    { _id: 0, host: "mongod-0.mongodsvc.webapps.svc.cluster.local:27017" },
+                    { _id: 1, host: "mongod-1.mongodsvc.webapps.svc.cluster.local:27017" },
+                    { _id: 2, host: "mongod-2.mongodsvc.webapps.svc.cluster.local:27017" }
+                  ]
+                })
+              '
+
+              echo "Creating admin user..."
+              mongosh --host mongod-0.mongodsvc.webapps.svc.cluster.local:27017 --eval '
+                db.getSiblingDB("admin").createUser({
+                  user: "devdb",
+                  pwd: "devdb123",
+                  roles: [{ role: "root", db: "admin" }]
+                })
+              '
+---
+# 4. Spring Boot Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: springboot-deployment
+  namespace: webapps
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: springboot
+  template:
+    metadata:
+      labels:
+        app: springboot
+    spec:
+      containers:
+        - name: springboot-container
+          image: dockerhandson/spring-boot-mongo:1
+          ports:
+            - containerPort: 8080
+          env:
+            - name: MONGO_DB_USERNAME
+              value: devdb
+            - name: MONGO_DB_PASSWORD
+              value: devdb123
+            - name: SPRING_DATA_MONGODB_URI
+              value: mongodb://devdb:devdb123@mongodsvc.webapps.svc.cluster.local:27017/?replicaSet=MainRepSet
+
+---
+# 5. Spring Boot Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: springboot-svc
+  namespace: webapps
+spec:
+  type: ClusterIP
+  selector:
+    app: springboot
+  ports:
+  - port: 80
+    targetPort: 8080
+    name: http
+
+#6 ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: springboot-ingress
+  namespace: webapps
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: springboot.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: springboot-svc
+            port:
+              number: 80

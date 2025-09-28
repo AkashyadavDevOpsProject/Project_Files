@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nodejs
+spec:
+  selector:
+    matchLabels:
+      app: nodejs
+  template:
+    metadata:
+      labels:
+        app: nodejs
+    spec:
+      containers:
+      - name: nodejs-container
+        image: dockerhandson/node-app-mss:9
+        resources:
+          requests:
+            memory: "228Mi"
+            cpu: "200m"
+          limits:
+            memory: "328Mi"
+            cpu: "250m"
+        ports:
+        - containerPort: 9981

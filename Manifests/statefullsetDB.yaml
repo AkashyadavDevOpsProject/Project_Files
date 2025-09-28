@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongod
+  namespace: test 
+spec:
+  selector:
+    matchLabels:
+      app: mongod
+  serviceName: mongodsvc
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: mongod
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+      - name: mongodbcontainer
+        image: mongo
+        command:
+         - "mongod"
+         - "--bind_ip"
+         - "0.0.0.0"
+         - "--replSet"
+         - "MainRepSet"
+        ports:
+        - containerPort: 27017
+        volumeMounts:
+        - name: mongopvc
+          mountPath: "/data/db"
+  volumeClaimTemplates:
+  - metadata:
+      name: mongopvc
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodsvc
+  namespace: test
+spec:
+  ports:
+    - port: 27017
+      targetPort: 27017
+  clusterIP: None
+  selector:
+    app: mongo
+
+#mongo-0.mongo.test.svc.cluster.local:27017
+#rs.initiate({
+#    _id: "MainRepSet",
+#    members: [
+#        { _id: 0, host: "mongo-0.mongo.test.svc.cluster.local:27017" },
+#        { _id: 1, host: "mongo-1.mongo.test.svc.cluster.local:27017" },
+#        { _id: 2, host: "mongo-2.mongo.test.svc.cluster.local:27017" }
+#    ]
+#});
+#db.getSiblingDB("admin").createUser({
+#    user: "devdb",
+#    pwd: "devdb123",
+#    roles: [{ role: "root", db: "admin" }]
+#});
