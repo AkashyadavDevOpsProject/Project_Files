@@ -1,0 +1,214 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: rolling-update
+spec:
+  replicas: 5
+  strategy:
+    canary:
+      maxSurge: 2
+      maxUnavailable: 2
+  selector:
+    matchLabels:
+      app: rolling-update
+  template:
+    metadata:
+      labels:
+        app: rolling-update
+    spec:
+      containers:
+      - name: rolling-update
+        image: us-central1-docker.pkg.dev/devops-goat-2025/allinonerepo/i-am-batman:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rolling-update
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: rolling-update
+
+
+
+---
+# ingress for rollouing update 
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rolling-update
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: rolling-update.demo
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: rolling-update
+            port:
+              number: 80
+
+
+
+# set weight canarydeployment 
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: rollouts-setweight
+spec:
+  replicas: 5
+  strategy:
+    canary:
+      steps:
+      - setWeight: 20
+      - pause: {}
+      - setWeight: 40
+      - pause: {duration: 10s}
+      - setWeight: 60
+      - pause: {duration: 20s}
+      - setWeight: 80
+      - pause: {duration: 1m}
+  selector:
+    matchLabels:
+      app: rollouts-setweight
+  template:
+    metadata:
+      labels:
+        app: rollouts-setweight
+    spec:
+      containers:
+      - name: rollouts-setweight
+        image: us-central1-docker.pkg.dev/devops-goat-2025/allinonerepo/i-am-batman:latest
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rollouts-setweight
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: rollouts-setweight
+
+
+
+---
+
+# rollouts-setweight-ingress.yml
+
+
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rolling-update
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: rollouts-setweight.demo
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: rollouts-setweight
+            port:
+              number: 80
+
+
+# now we are going to use nginex ingress controller for canary stategery 
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: rollouts-traffic-management
+spec:
+  replicas: 5
+  strategy:
+    canary:
+      # dynamicStableScale: true
+      # abortScaleDownDelaySeconds: 20
+      canaryService: canary-service
+      stableService: stable-service
+      trafficRouting:
+        nginx:
+          stableIngress: rollouts-traffic-management
+      steps:
+      # - setWeight: 20 # Using Setweight Only
+      # - pause: {}
+      # ....................
+      - setCanaryScale: # Using SetCanaryScale with SetWeight 
+         weight: 40     # % of repica set for new revious 
+      - setWeight: 40   # % of trafic sent to the new reviosu replica set 
+      - pause: {}
+  selector:
+    matchLabels:
+      app: rollouts-traffic-management
+  template:
+    metadata:
+      labels:
+        app: rollouts-traffic-management
+    spec:
+      containers:
+      - name: rollouts-traffic-management
+        image: us-central1-docker.pkg.dev/devops-goat-2025/allinonerepo/i-am-batman:latest 
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: canary-service
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: rollouts-traffic-management
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stable-service
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: rollouts-traffic-management
+
+
+---
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rollouts-traffic-management
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: rollouts-traffic-management.demo
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: stable-service
+            port:
+              number: 80
