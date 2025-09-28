@@ -1,0 +1,568 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'This CloudFormation script provisions a RDS Aurora PostgreSQL instance(s)'
+
+Metadata:
+  "AWS::CloudFormation::Interface":
+    ParameterGroups:
+      - Label:
+          default: Tag Configuration
+        Parameters:
+          - pApplicationName
+          - pApplicationNameLC
+          - pProject
+          - pPurpose
+      - Label:
+          default: RDS Aurora PostgreSQL Server Configuration
+        Parameters:
+          - pDatabaseName
+          - pDatabasePortNumber
+          - pDatabaseClass
+          - pEngineVersion
+          - pDatabaseAdminName
+          - pDatabaseAdminPassword
+          - pDatabaseParameterGroupName
+          - pDatabaseSubnetGroupName
+          - pPreferredBackupWindow
+          - pPreferredMaintenanceWindow
+          - pDatabaseBackupRetentionPeriod
+          - pEnableCloudwatchLogsExpor
+
+    ParameterLabels:
+      pApplicationName:
+        default: Application Name
+      pApplicationNameLC:
+        default: Application Name Lower Case
+      pProject:
+        default: Project Name
+      pPurpose:
+        default: specify the purpose of the resource.
+
+      pDatabaseName:
+        default: Database Instance Name
+      pDatabasePortNumber:
+        default: Database Port Number
+      pDatabaseClass:
+        default: Database Instance Class
+      pEngineVersion:
+        default: Database Engine Version
+      pDatabaseAdminName:
+        default: Database Admin Username
+      pDatabaseAdminPassword:
+        default: Database Admin Password
+      pDatabaseParameterGroupName:
+        default: Database Parameter Group Name
+      pDatabaseSubnetGroupName:
+        default: Subnet Group Name
+      pPreferredBackupWindow:
+        default: Preferred Backup Window
+      pPreferredMaintenanceWindow:
+        default: Preferred Maintenance Window
+      pDatabaseBackupRetentionPeriod:
+        default: Backup Retention Period
+      pEnableCloudwatchLogsExports:
+        default: Log types for exporting to CloudWatch Logs
+      
+
+Parameters:
+
+  pDatabaseName:
+    Description: Database Name.
+    Type: String
+    Default: 'MyAPDBProvisioned'
+    MinLength: 1
+    MaxLength: 60
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: The resource name must be a valid string
+
+  pDatabasePortNumber:
+    Description: The port number on which the database accepts connections.
+    Type: Number
+    Default: 3307
+    MinValue: 1150
+    MaxValue: 65535
+    ConstraintDescription: 1150-65535 except for 1434, 3389, 47001, 49152, and 49152
+
+  pDatabaseClass:
+    Description: The name of the compute and memory capacity classes of the Database instance.
+    Type: String
+    Default: db.t3.medium
+    AllowedValues:
+      - db.t3.medium
+      - db.t3.large
+      - db.t4g.medium
+      - db.t4g.large
+      - db.r5.large
+      - db.r5.xlarge
+      - db.r5.2xlarge
+      - db.r5.4xlarge
+      - db.r5.8xlarge
+      - db.r5.12xlarge
+      - db.r5.16xlarge
+      - db.r5.24xlarge
+      - db.r6g.large
+      - db.r6g.xlarge
+      - db.r6g.2xlarge
+      - db.r6g.4xlarge
+      - db.r6g.8xlarge
+      - db.r6g.12xlarge
+      - db.r6g.16xlarge
+      - db.r6i.large
+      - db.r6i.xlarge
+      - db.r6i.2xlarge
+      - db.r6i.4xlarge
+      - db.r6i.8xlarge
+      - db.r6i.12xlarge
+      - db.r6i.16xlarge
+      - db.r6i.24xlarge
+      - db.r6i.32xlarge
+      - db.x2g.large
+      - db.x2g.xlarge
+      - db.x2g.2xlarge
+      - db.x2g.4xlarge
+      - db.x2g.8xlarge
+      - db.x2g.12xlarge
+      - db.x2g.16xlarge
+
+  pEngineVersion:
+    Description: The name of the database engine to be used for this instance.
+    Type: String
+    AllowedValues: ["13.3", "13.4", "13.5", "13.6", "13.7", "13.8", "13.9", "14.3", "14.4", "14.5", "14.6"]
+    Default: "13.7"
+    ConstraintDescription: "The version number of the database engine to use."
+
+  pDatabaseAdminName:
+    Description: The database admin account username
+    Type: String
+    MinLength: '8'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    Default: 'auroraadmin'
+
+  pDatabaseAdminPassword:
+    NoEcho: 'true'
+    Description: The database admin account password
+    Type: String
+    MinLength: '8'
+    MaxLength: '64'
+    Default: 'auroraadmin123!'
+    AllowedPattern: '^([a-zA-Z0-9\\!@\\#\\$\\%\\^\\&\\*\\(\\)\\-\\_\\+\\=\\?]){8,}$'
+    ConstraintDescription: >-
+      must be at least 8 characters long and contain alphanumeric characters
+      with at least one special character, capital letter and one number.
+
+  pDatabaseSubnetGroupName:
+    Type: String
+    Default: 'apdprovisionedsubnet'
+    Description: Name of the subnet group for the database
+    MinLength: 5
+    MaxLength: 50
+
+  pDatabaseParameterGroupName:
+    Type: String
+    Default: 'apdprovisioned'
+    Description: Name of the new database parameter group
+    MinLength: 5
+    MaxLength: 50
+
+  pPreferredBackupWindow:
+    Description: >-
+      The daily time range in UTC during which you want to create automated
+      backups.
+    Type: String
+    Default: '00:00-03:00'
+
+  pPreferredMaintenanceWindow:
+    Description: The weekly time range (in UTC) during which system maintenance can occur.
+    Type: String
+    Default: 'sat:07:00-sat:07:30'
+
+  pDatabaseBackupRetentionPeriod:
+    Description: The number of days to keep snapshots of the database.
+    Type: Number
+    MinValue: 0
+    MaxValue: 35
+    Default: 30
+
+  pEnableCloudwatchLogsExports:
+    Description: The list of log types that need to be enabled for exporting to CloudWatch Logs. Valid values are postgresql, upgrade
+    Type: CommaDelimitedList
+    Default: "postgresql"
+    AllowedValues:
+      - postgresql
+      - upgrade
+
+  # Tag
+  pApplicationName:
+    Type: String
+    Description: Enter the application name. If you are not sure then use the value from the project name in GitLab.
+    Default: 'ACES'
+    AllowedPattern: >-
+      (^[a-zA-Z0-9]+$)
+
+  pApplicationNameLC:
+    Type: String
+    Description: Enter the application name. If you are not sure then use the value from the project name in GitLab.
+    ConstraintDescription: The application name must be lowercase
+    Default: 'aces'
+    AllowedPattern: >-
+      (^[a-z0-9]+$)
+
+  pProject:
+    Type: String
+    Description: Enter the Project name
+    ConstraintDescription: Must specify value
+    Default: 'ap'
+    AllowedPattern: >-
+      (^[a-zA-Z0-9]+$)
+
+  pPurpose:
+    Type: String
+    Description: Enter the general purpose of the resource
+    ConstraintDescription: Must specify value
+    AllowedPattern: >-
+      (^[a-zA-Z0-9]+$)
+
+  pSsmSupportGroup:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: Support Group conveys email distribution list of the group that is supporting the resource(DO NOT MODIFY)
+    Default: /account/config/SupportGroup
+    AllowedValues:
+      - /account/config/SupportGroup
+
+  pSsmAppGroup:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: App Group conveys the application group the resource belongs to(DO NOT MODIFY)
+    Default: /account/config/AppGroup
+    AllowedValues:
+      - /account/config/AppGroup
+
+  pSsmLifeCycle:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: LifeCycle conveys the lifecycle of the resource(DO NOT MODIFY)
+    Default: /account/config/LifeCycle
+    AllowedValues:
+      - /account/config/LifeCycle
+
+  pSsmBusiness:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: Business conveys the division or office associated with the resource(DO NOT MODIFY)
+    Default: /account/config/Business
+    AllowedValues:
+      - /account/config/Business
+
+  pSsmBusinessLC:
+    Type: AWS::SSM::Parameter::Value<String>
+    Description: Business with the restriction that is lower case,SSM Parameter value for Division Name(DO NOT MODIFY)
+    Default: /account/config/BusinessLowercase
+    AllowedValues:
+      - /account/config/BusinessLowercase
+
+Resources:
+  rInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      GroupDescription: Allow RDS Port
+      GroupName: !Sub "rds-aurora-postgresql-${pDatabaseName}"
+      VpcId: !ImportValue VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref pDatabasePortNumber
+          ToPort: !Ref pDatabasePortNumber
+          CidrIp: !ImportValue VpcCidrBlock
+        - IpProtocol: tcp
+          FromPort: !Ref pDatabasePortNumber
+          ToPort: !Ref pDatabasePortNumber
+          CidrIp: 172.16.0.0/12
+      Tags:
+        - Key: Name
+          Value: !Sub
+          - '${Project}-${ApplicationName}-${Purpose}'
+          - Project: !Ref pProject
+            ApplicationName: !Ref pApplicationName
+            Purpose: !Ref pPurpose
+        - Key: LifeCycle
+          Value: !Ref pSsmLifeCycle
+        - Key: ApplicationName
+          Value: !Ref pApplicationName
+        - Key: Business
+          Value: !Ref pSsmBusiness
+        - Key: SupportGroup
+          Value: !Ref pSsmSupportGroup
+        - Key: AppGroup
+          Value: !Ref pSsmAppGroup
+
+  rDatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      DBSubnetGroupName: !Ref pDatabaseSubnetGroupName
+      DBSubnetGroupDescription: Subnet Group for RDS Aurora PostgreSQL Server
+      SubnetIds:
+        - !ImportValue VpcSubnet1
+        - !ImportValue VpcSubnet2
+        - !ImportValue VpcSubnet3
+        - !ImportValue VpcSubnet4
+      Tags:
+        - Key: Name
+          Value: !Sub
+          - '${Project}-${ApplicationName}-${Purpose}'
+          - Project: !Ref pProject
+            ApplicationName: !Ref pApplicationName
+            Purpose: !Ref pPurpose
+        - Key: LifeCycle
+          Value: !Ref pSsmLifeCycle
+        - Key: ApplicationName
+          Value: !Ref pApplicationName
+        - Key: Business
+          Value: !Ref pSsmBusiness
+        - Key: SupportGroup
+          Value: !Ref pSsmSupportGroup
+        - Key: AppGroup
+          Value: !Ref pSsmAppGroup
+
+  rDatabaseParamGroup:
+    Type: 'AWS::RDS::DBClusterParameterGroup'
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Database Parameter Group + pg_stat_statements
+      DBClusterParameterGroupName: !Ref pDatabaseParameterGroupName
+      Family: "aurora-postgresql13"
+      Parameters:
+        shared_preload_libraries: pg_stat_statements, pgaudit
+        pgaudit.log_catalog: 'on'
+        pgaudit.log_level: log
+        pgaudit.log_parameter: 'on'
+        pgaudit.log_statement_once: 'off'
+        pgaudit.log: 'all, -misc'
+        log_error_verbosity: default
+        log_connections: 'on'
+        log_disconnections: 'on'
+        tcp_keepalives_idle: 10
+        tcp_keepalives_interval: 10
+        tcp_keepalives_count: 10
+        client_min_messages: error
+        statement_timeout: 10000
+      Tags:
+        - Key: Name
+          Value: !Sub
+          - '${Project}-${ApplicationName}-${Purpose}'
+          - Project: !Ref pProject
+            ApplicationName: !Ref pApplicationName
+            Purpose: !Ref pPurpose
+        - Key: LifeCycle
+          Value: !Ref pSsmLifeCycle
+        - Key: ApplicationName
+          Value: !Ref pApplicationName
+        - Key: Business
+          Value: !Ref pSsmBusiness
+        - Key: SupportGroup
+          Value: !Ref pSsmSupportGroup
+        - Key: AppGroup
+          Value: !Ref pSsmAppGroup
+
+  rRDSDBAdminScret:
+    Type: 'AWS::SecretsManager::Secret'
+    Properties:
+      Name:
+        "Fn::Join":
+          - "/"
+          - - "{{resolve:ssm:/account/config/BusinessLowercase}}"
+            - Ref: pApplicationNameLC
+            - "{{resolve:ssm:/account/config/LifeCycleLowercase}}"
+            - "rds"
+            - !Sub '${pDatabaseName}'
+            - "databasesecret"
+      Description: RDS Aurora Cluster Admin username and password
+      SecretString: !Sub '{"username": "${pDatabaseAdminName}", "password": "${pDatabaseAdminPassword}", "engine": "aurora-postgresql", "host":"${rDatabaseAuroraCluster.Endpoint.Address}", "port":"${rDatabaseAuroraCluster.Endpoint.Port}", "dbInstanceIdentifier":"{{resolve:ssm:/account/config/BusinessLowercase}}-${pApplicationNameLC}-cluster-${pDatabaseName}" }'
+      KmsKeyId: !ImportValue SecretsManagerKeyId
+      Tags:
+        - Key: Name
+          Value: !Sub
+          - '${Project}-${ApplicationName}-${Purpose}'
+          - Project: !Ref pProject
+            ApplicationName: !Ref pApplicationName
+            Purpose: !Ref pPurpose
+        - Key: LifeCycle
+          Value: !Ref pSsmLifeCycle
+        - Key: ApplicationName
+          Value: !Ref pApplicationName
+        - Key: Business
+          Value: !Ref pSsmBusiness
+        - Key: SupportGroup
+          Value: !Ref pSsmSupportGroup
+        - Key: AppGroup
+          Value: !Ref pSsmAppGroup
+
+  rDatabaseAuroraCluster:
+    Type: 'AWS::RDS::DBCluster'
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      CopyTagsToSnapshot: true
+      DatabaseName: !Ref pDatabaseName
+      DBClusterIdentifier:
+        "Fn::Join":
+          - "-"
+          - - "{{resolve:ssm:/account/config/BusinessLowercase}}"
+            - Ref: pApplicationName
+            - "cluster"
+            - Ref: pDatabaseName
+      DeletionProtection: true
+      Engine: 'aurora-postgresql'
+      EngineVersion: !Ref pEngineVersion
+      StorageEncrypted: true
+      KmsKeyId: !ImportValue RdsKeyId
+      Port: !Ref pDatabasePortNumber
+      EnableCloudwatchLogsExports: !Ref pEnableCloudwatchLogsExports
+      MasterUsername: !Ref pDatabaseAdminName
+      MasterUserPassword: !Ref pDatabaseAdminPassword
+      PreferredBackupWindow: !Ref pPreferredBackupWindow
+      PreferredMaintenanceWindow: !Ref pPreferredMaintenanceWindow
+      BackupRetentionPeriod: !Ref pDatabaseBackupRetentionPeriod
+      VpcSecurityGroupIds:
+        - !Ref rInstanceSecurityGroup
+      DBSubnetGroupName: !Ref rDatabaseSubnetGroup
+      DBClusterParameterGroupName: !Ref pDatabaseParameterGroupName
+      Tags:
+        - Key: Name
+          Value: !Sub
+          - '${Project}-${ApplicationName}-${Purpose}'
+          - Project: !Ref pProject
+            ApplicationName: !Ref pApplicationName
+            Purpose: !Ref pPurpose
+        - Key: LifeCycle
+          Value: !Ref pSsmLifeCycle
+        - Key: ApplicationName
+          Value: !Ref pApplicationName
+        - Key: Business
+          Value: !Ref pSsmBusiness
+        - Key: SupportGroup
+          Value: !Ref pSsmSupportGroup
+        - Key: AppGroup
+          Value: !Ref pSsmAppGroup
+
+  rDatabaseInstance1:
+    Type: 'AWS::RDS::DBInstance'
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: 'aurora-postgresql'
+      DBClusterIdentifier: !Ref  rDatabaseAuroraCluster
+      DBInstanceClass: !Ref pDatabaseClass
+      DBInstanceIdentifier:
+        "Fn::Join":
+          - "-"
+          - - "{{resolve:ssm:/account/config/BusinessLowercase}}"
+            - Ref: pApplicationNameLC
+            - Ref: pDatabaseName
+            - "1"
+      DBSubnetGroupName: !Ref rDatabaseSubnetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub
+          - '${Project}-${ApplicationName}-${Purpose}'
+          - Project: !Ref pProject
+            ApplicationName: !Ref pApplicationName
+            Purpose: !Ref pPurpose
+        - Key: LifeCycle
+          Value: !Ref pSsmLifeCycle
+        - Key: ApplicationName
+          Value: !Ref pApplicationName
+        - Key: Business
+          Value: !Ref pSsmBusiness
+        - Key: SupportGroup
+          Value: !Ref pSsmSupportGroup
+        - Key: AppGroup
+          Value: !Ref pSsmAppGroup
+
+  rDatabaseInstance2:
+    Type: 'AWS::RDS::DBInstance'
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: 'aurora-postgresql'
+      DBClusterIdentifier: !Ref  rDatabaseAuroraCluster
+      DBInstanceClass: !Ref pDatabaseClass
+      DBInstanceIdentifier:
+        "Fn::Join":
+          - "-"
+          - - "{{resolve:ssm:/account/config/BusinessLowercase}}"
+            - Ref: pApplicationNameLC
+            - Ref: pDatabaseName
+            - "2"
+      DBSubnetGroupName: !Ref rDatabaseSubnetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub
+          - '${Project}-${ApplicationName}-${Purpose}'
+          - Project: !Ref pProject
+            ApplicationName: !Ref pApplicationName
+            Purpose: !Ref pPurpose
+        - Key: LifeCycle
+          Value: !Ref pSsmLifeCycle
+        - Key: ApplicationName
+          Value: !Ref pApplicationName
+        - Key: Business
+          Value: !Ref pSsmBusiness
+        - Key: SupportGroup
+          Value: !Ref pSsmSupportGroup
+        - Key: AppGroup
+          Value: !Ref pSsmAppGroup
+
+  rDBMonitorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'DBMonitorRole-${AWS::Region}-${AWS::StackName}'
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - monitoring.rds.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Tags:
+        - Key: Name
+          Value: !Sub
+          - '${Project}-${ApplicationName}-${Purpose}'
+          - Project: !Ref pProject
+            ApplicationName: !Ref pApplicationName
+            Purpose: !Ref pPurpose
+        - Key: LifeCycle
+          Value: !Ref pSsmLifeCycle
+        - Key: ApplicationName
+          Value: !Ref pApplicationName
+        - Key: Business
+          Value: !Ref pSsmBusiness
+        - Key: SupportGroup
+          Value: !Ref pSsmSupportGroup
+        - Key: AppGroup
+          Value: !Ref pSsmAppGroup
+
+Outputs:
+  StackName:
+    Description: 'Stack name.'
+    Value: !Sub '${AWS::StackName}'
+  ClusterName:
+    Description: 'The name of the RDS Aurora Cluster.'
+    Value: !Ref rDatabaseAuroraCluster
+  DNSName:
+    Description: 'The connection endpoint for the DB cluster.'
+    Value: !GetAtt 'rDatabaseAuroraCluster.Endpoint.Address'
+  ReadDNSName:
+    Description: 'The reader endpoint for the DB cluster.'
+    Value: !GetAtt 'rDatabaseAuroraCluster.ReadEndpoint.Address'
+  SecurityGroupId:
+    Description: 'The security group used to manage access to RDS Aurora.'
+    Value: !Ref rDatabaseSubnetGroup
+  AdminSecretId:
+    Description: 'The Secrets Manager secret credentials to RDS Aurora.'
+    Value: !Ref rRDSDBAdminScret
