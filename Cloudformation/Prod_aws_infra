@@ -1,0 +1,505 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description:  This Template will create the vpc 4 private subnet RouteTable and subnet are Association with that RouteTable 
+              vpc endpoint Services Parameter Store ECR CloudWatch and S3 and Multi-AZ rds with 1 master 1 node and 2 ReadReplica and security group for each 
+              and ecs cluster with 2 TaskDefinition and 4 services 2 for backend and 2 for ui ecs included ALB TargetGroup Roles to execution of TaskDefinition and security group 
+
+Parameters:
+  VpcCIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+
+  DBInstanceIdentifier:
+    Type: String
+    Description: Identifier for the RDS DB instance
+
+  MasterUsername:
+    Type: String
+    Default: Batman
+    Description: Master username for the RDS DB instance
+
+  MasterUserPassword:
+    Type: String
+    NoEcho: true
+    Description: Master password for the RDS DB instance
+
+  Subnet1CIDR:
+    Type: String
+    Default: 10.0.0.0/24
+    Description: CIDR block for Subnet 1
+
+  Subnet2CIDR:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for Subnet 2
+
+  Subnet3CIDR:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR block for Subnet 3
+
+  Subnet4CIDR:
+    Type: String
+    Default: 10.0.3.0/24
+    Description: CIDR block for Subnet 4
+
+  Engine:
+    Type: String
+    Default: postgres
+    Description: The database engine for the RDS instance
+
+  EngineVersion:
+    Type: String
+    Default: 14.5
+    Description: The version of the database engine
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.small
+    Description: The instance class for the RDS instance
+
+  AllocatedStorage:
+    Type: Number
+    Default: 20
+    Description: The allocated storage size for the RDS instance
+
+  StorageType:
+    Type: String
+    Default: gp2
+    Description: The storage type for the RDS instance
+
+  BackendContainerIamge:
+    Type: String
+    Description: Container Image for TaskDefinition 1 For Backend
+
+  UIContainerImage:
+    Type: String
+    Description: Container Image for TaskDefinition 2 For UI
+
+  BackendContainerName:
+    Type: String
+    Description: Name of Container 1 for backend
+
+  UIContainerName:
+    Type: String
+    Description: Name of Container 2 for ui-container
+
+  CPUForBackend:
+    Type: String
+    Description: CPU for TaskDefinition 1 for backend
+
+  CPUForUI:
+    Type: String
+    Description: CPU for TaskDefinition 2 for ui
+
+  MemoryforBackend:
+    Type: String
+    Description: Memory for TaskDefinition 1 for backend
+
+  MemoryForUI:
+    Type: String
+    Description: Memory for TaskDefinition 2 for ui 
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref Subnet1CIDR
+      AvailabilityZone: !Select [0, !GetAZs '']
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref Subnet2CIDR
+      AvailabilityZone: !Select [1, !GetAZs '']
+
+  PrivateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref Subnet3CIDR
+      AvailabilityZone: !Select [0, !GetAZs '']
+
+  PrivateSubnet4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref Subnet4CIDR
+      AvailabilityZone: !Select [1, !GetAZs '']
+  
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet3
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet4RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet4
+      RouteTableId: !Ref PrivateRouteTable
+
+  ParameterStoreVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.ap-south-1.ssm
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+        - !Ref PrivateSubnet4
+
+  ECRVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.ap-south-1.ecr.dkr
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+        - !Ref PrivateSubnet4 
+
+  S3VPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.ap-south-1.s3
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+        - !Ref PrivateSubnet4
+
+  CloudWatchVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.ap-south-1.logs
+      VpcEndpointType: Interface
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+        - !Ref PrivateSubnet3
+        - !Ref PrivateSubnet4
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: RDS Multi-AZ Subnet Group
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  DBInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS DB Instance Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          CidrIp: 0.0.0.0/0
+
+  StandbyDBInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS Standby DB Instance Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          SourceSecurityGroupId: !Ref DBInstanceSecurityGroup
+
+  ReadReplica1SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS Read Replica 1 Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          SourceSecurityGroupId: !Ref DBInstanceSecurityGroup
+
+  ReadReplica2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: RDS Read Replica 2 Security Group
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 1521
+          ToPort: 1521
+          SourceSecurityGroupId: !Ref DBInstanceSecurityGroup
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: !Ref Engine
+      EngineVersion: !Ref EngineVersion
+      DBInstanceIdentifier: !Ref DBInstanceIdentifier
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+
+
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref AllocatedStorage
+      StorageType: !Ref StorageType
+      MultiAZ: true
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !Ref DBInstanceSecurityGroup
+
+  StandbyDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: !Ref Engine
+      EngineVersion: !Ref EngineVersion
+      DBInstanceIdentifier: StandbyDBInstance
+      SourceDBInstanceIdentifier: !Ref DBInstance
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref AllocatedStorage
+      StorageType: !Ref StorageType
+      MultiAZ: true
+      VPCSecurityGroups:
+        - !Ref StandbyDBInstanceSecurityGroup
+
+  ReadReplica1:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: !Ref Engine
+      EngineVersion: !Ref EngineVersion
+      DBInstanceIdentifier: ReadReplica1
+      SourceDBInstanceIdentifier: !Ref DBInstance
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref AllocatedStorage
+      StorageType: !Ref StorageType
+      VPCSecurityGroups:
+        - !Ref ReadReplica1SecurityGroup
+
+  ReadReplica2:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: !Ref Engine
+      EngineVersion: !Ref EngineVersion
+      DBInstanceIdentifier: ReadReplica2
+      SourceDBInstanceIdentifier: !Ref DBInstance
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref AllocatedStorage
+      StorageType: !Ref StorageType
+      VPCSecurityGroups:
+        - !Ref ReadReplica2SecurityGroup
+  
+  MyECSCluster:
+    Type: 'AWS::ECS::Cluster'
+
+  MyExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: MyExecutionRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
+
+  MyTaskDefinition1:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: my-task-definition-1
+      NetworkMode: awsvpc
+      Cpu: !Ref CPUForBackend
+      Memory: !Ref MemoryforBackend
+      ExecutionRoleArn: !GetAtt MyExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Ref BackendContainerName
+          Image: !Ref BackendContainerIamge
+          PortMings:
+            - ContainerPort: 80
+
+  MyTaskDefinition2:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: my-task-definition-2
+      NetworkMode: awsvpc
+      Cpu: !Ref CPUForUI
+      Memory: !Ref MemoryForUI
+      ExecutionRoleArn: !GetAtt MyExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Ref UIContainerName
+          Image: !Ref UIContainerImage
+          PortMings:
+            - ContainerPort: 80
+
+  MyALBSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security group for ALB
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  MyFargateSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security group for Fargate tasks
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref MyALBSecurityGroup
+
+  MyALBTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: my-target-group
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !Ref VPC
+
+  MyALBListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MyALBTargetGroup
+      LoadBalancerArn: !Ref MylicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  MylicationLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+    Properties:
+      Name: my-lication-load-balancer
+      Scheme: internet-facing
+      Subnets:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroups:
+        - !Ref MyALBSecurityGroup
+      Type: lication
+
+  MyService1:
+    Type: 'AWS::ECS::Service'
+    DependsOn: MyALBListener
+    Properties:
+      Cluster: !Ref MyECSCluster
+      LaunchType: FARGATE
+      ServiceName: my-service-1
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref MyFargateSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet1
+      TaskDefinition: !Ref MyTaskDefinition1
+      LoadBalancers:
+        - ContainerName: !Ref BackendContainerName
+          ContainerPort: 80
+          TargetGroupArn: !Ref MyALBTargetGroup
+
+  MyService2:
+    Type: 'AWS::ECS::Service'
+    DependsOn: MyALBListener
+    Properties:
+      Cluster: !Ref MyECSCluster
+      LaunchType: FARGATE
+      ServiceName: my-service-2
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref MyFargateSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet2
+      TaskDefinition: !Ref MyTaskDefinition2
+      LoadBalancers:
+        - ContainerName: !Ref UIContainerName
+          ContainerPort: 80
+          TargetGroupArn: !Ref MyALBTargetGroup
+
+  MyService3:
+    Type: 'AWS::ECS::Service'
+    DependsOn: MyALBListener
+    Properties:
+      Cluster: !Ref MyECSCluster
+      LaunchType: FARGATE
+      ServiceName: my-service-3
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref MyFargateSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet1
+      TaskDefinition: !Ref MyTaskDefinition1
+      LoadBalancers:
+        - ContainerName: !Ref BackendContainerName
+          ContainerPort: 80
+          TargetGroupArn: !Ref MyALBTargetGroup
+
+  MyService4:
+    Type: 'AWS::ECS::Service'
+    DependsOn: MyALBListener
+    Properties:
+      Cluster: !Ref MyECSCluster
+      LaunchType: FARGATE
+      ServiceName: my-service-4
+      DesiredCount: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref MyFargateSecurityGroup
+          Subnets:
+            - !Ref PrivateSubnet2
+      TaskDefinition: !Ref MyTaskDefinition2
+      LoadBalancers:
+        - ContainerName: !Ref UIContainerName
+          ContainerPort: 80
+          TargetGroupArn: !Ref MyALBTargetGroup
